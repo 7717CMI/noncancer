@@ -30,7 +30,7 @@ export const CHART_GROUPS: ChartGroup[] = [
   },
   {
     id: 'customer-intelligence',
-    label: 'Customer Intelligence',
+    label: 'Distributor Intelligence',
     description: 'Customer database with proposition tables',
     charts: ['customer-intelligence-database'],
     icon: '👤'

@@ -404,7 +404,7 @@ export default function DashboardPage() {
                                 : 'border-transparent text-black hover:text-black hover:border-gray-300'
                             }`}
                           >
-                            👤 Customer Intelligence
+                            👤 Distributor Intelligence
                           </button>
                         )}
                       </>
@@ -613,7 +613,7 @@ export default function DashboardPage() {
 
                     {isChartVisible('customer-intelligence-database') && (
                       <div className="border-b pb-8">
-                        <h3 className="text-lg font-semibold text-black mb-4">👤 Customer Intelligence Database</h3>
+                        <h3 className="text-lg font-semibold text-black mb-4">👤 Distributor Intelligence Database</h3>
                         <CustomerIntelligenceDatabaseWithTabs
                           height={600}
                         />
