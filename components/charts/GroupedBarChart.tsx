@@ -46,10 +46,19 @@ export function GroupedBarChart({ title, height = 400 }: GroupedBarChartProps) {
     // (Intravenous, Intramuscular, Subcutaneous) as separate bars, NOT aggregate them
     let effectiveAggregationLevel: number | null = filters.aggregationLevel ?? null
 
+    // Regional segment types (By Region, By State, By Country) have different hierarchy structure
+    // Don't force level 2 for these - let filterData handle them with null (all levels)
+    const isRegionalSegmentType = filters.segmentType === 'By Region' ||
+                                   filters.segmentType === 'By State' ||
+                                   filters.segmentType === 'By Country'
+
     // CRITICAL: When user has explicitly selected segments, ALWAYS use null
     // This prevents any Level 2 aggregation and shows individual sub-segments
     if (hasUserSelectedSegments) {
       // User selected segments - show individual records (children of selected parents)
+      effectiveAggregationLevel = null
+    } else if (isRegionalSegmentType) {
+      // Regional segment types need null to let all records through
       effectiveAggregationLevel = null
     } else if (effectiveAggregationLevel === null) {
       // No segments selected - use Level 2 to show parent segments aggregated
@@ -151,8 +160,8 @@ export function GroupedBarChart({ title, height = 400 }: GroupedBarChartProps) {
     })
 
     // Determine if we're using stacked bars
-    const isStacked = (filters.viewMode === 'segment-mode' && filters.geographies.length > 1) ||
-                      (filters.viewMode === 'geography-mode' && filters.segments.length > 1)
+    // Geography mode always shows totals (one bar per geography), never stacked by segment
+    const isStacked = (filters.viewMode === 'segment-mode' && filters.geographies.length > 1)
 
     let series: string[] = []
     let stackedSeries: { primary: string[], secondary: string[] } | null = null
@@ -246,14 +255,11 @@ export function GroupedBarChart({ title, height = 400 }: GroupedBarChartProps) {
         // For segment mode with Level 2 aggregation, extract keys from prepared data
         series = extractSeriesFromPreparedData()
       } else {
-        // Geography mode - use selected geographies when Global data is used as fallback
-        const regionalGeographies = ['North America', 'Europe', 'Asia Pacific', 'Latin America', 'Middle East', 'Africa', 'Middle East & Africa', 'ASEAN', 'SAARC Region', 'CIS Region']
-        const hasRegionalSelection = filters.geographies.some(g => regionalGeographies.includes(g))
-        const hasOnlyGlobalRecords = filtered.every(r => r.geography === 'Global')
-
-        series = (hasRegionalSelection && hasOnlyGlobalRecords && !filters.geographies.includes('Global'))
-          ? filters.geographies.filter(g => regionalGeographies.includes(g))
-          : getUniqueGeographies(filtered)
+        // Geography mode - always use prepared data keys as series
+        // The data preparation already maps child geographies to parents
+        // (e.g., U.S./Canada aggregated under North America)
+        // Using getUniqueGeographies(filtered) would show children as separate bars
+        series = extractSeriesFromPreparedData()
       }
     }
 

@@ -42,7 +42,14 @@ export function MultiLineChart({ title, height = 400 }: MultiLineChartProps) {
       )
       const hasSegmentsForCurrentType = segmentsFromSameType.length > 0
 
-      if (!hasSegmentsForCurrentType) {
+      // Regional segment types (By Region, By State, By Country) need null to let all records through
+      const isRegionalSegmentType = filters.segmentType === 'By Region' ||
+                                     filters.segmentType === 'By State' ||
+                                     filters.segmentType === 'By Country'
+
+      if (isRegionalSegmentType) {
+        // Don't force level 2 for regional types - keep null
+      } else if (!hasSegmentsForCurrentType) {
         // No segments selected - use Level 2 to show parent segments aggregated
         effectiveAggregationLevel = 2
       }
@@ -97,8 +104,8 @@ export function MultiLineChart({ title, height = 400 }: MultiLineChartProps) {
       // For segment mode with Level 2 aggregation, extract keys from prepared data
       series = extractSeriesFromPreparedData()
     } else if (filters.viewMode === 'geography-mode') {
-      // When multiple segments are selected, each line represents a geography
-      series = getUniqueGeographies(filtered)
+      // Always use prepared data keys - data preparation already maps children to parents
+      series = extractSeriesFromPreparedData()
     } else if (filters.viewMode === 'matrix') {
       // Matrix view - combine geography and segment
       const uniquePairs = new Set<string>()

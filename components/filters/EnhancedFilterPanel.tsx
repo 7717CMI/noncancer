@@ -65,6 +65,19 @@ export function EnhancedFilterPanel() {
     // No need to reset segment type - allow all segment types for both value and volume
     // The data processor handles both datasets with the same segment types
   }, [filters.dataType])
+
+  // If "By Region" is selected but non-Global geography is chosen, switch away from it
+  useEffect(() => {
+    if (!data?.dimensions?.segments) return
+    const onlyGlobal = filters.geographies.length === 0 ||
+      (filters.geographies.length === 1 && filters.geographies.includes('Global'))
+    if (selectedSegmentType === 'By Region' && !onlyGlobal) {
+      const available = Object.keys(data.dimensions.segments).filter(t => t !== 'By Region')
+      if (available.length > 0) {
+        setSelectedSegmentType(available[0])
+      }
+    }
+  }, [filters.geographies, selectedSegmentType, data])
   
   // Clear selected segments when business type changes and segment type has B2B/B2C
   const segmentDimension = data?.dimensions?.segments?.[selectedSegmentType]
@@ -92,6 +105,7 @@ export function EnhancedFilterPanel() {
       hierarchy = segmentDimension.b2c_hierarchy
     }
   }
+
   
   // Filter available segments based on business type hierarchy
   // Use the business-type specific items array if available (from new API)
@@ -152,7 +166,19 @@ export function EnhancedFilterPanel() {
       availableSegments = Array.from(allSegmentsFromHierarchy)
     }
   }
-  
+
+  // For "By Region" when Global is selected, show only top-level regions as a flat list
+  // (North America, Europe, etc.) — no country-level drill-down
+  const isGlobalOnly = filters.geographies.length === 0 ||
+    (filters.geographies.length === 1 && filters.geographies.includes('Global'))
+  if (selectedSegmentType === 'By Region' && isGlobalOnly) {
+    const topLevelRegions = Object.keys(hierarchy)
+    if (topLevelRegions.length > 0) {
+      availableSegments = topLevelRegions
+      hierarchy = {}
+    }
+  }
+
   // Build hierarchical options for the select (only used for flat segments fallback)
   // This function is now only used when there's no hierarchy, so we don't need complex recursion
   const getHierarchicalOptions = () => {
@@ -250,14 +276,25 @@ export function EnhancedFilterPanel() {
   // Get all segment types
   // For volume mode, only show segment types that have actual volume records
   const allSegmentTypes = Object.keys(data.dimensions.segments)
+
+  // Determine if only Global is selected (or nothing selected)
+  const hasOnlyGlobal = filters.geographies.length === 0 ||
+    (filters.geographies.length === 1 && filters.geographies.includes('Global'))
+
+  // "By Region" only appears when Global is selected
+  // All other segment types are available for every geography
+  const filteredSegmentTypes = hasOnlyGlobal
+    ? allSegmentTypes
+    : allSegmentTypes.filter(type => type !== 'By Region')
+
   const segmentTypes = filters.dataType === 'volume'
     ? (() => {
         const volumeRecords = data.data.volume.geography_segment_matrix
         const volumeSegTypes = new Set(volumeRecords.map(r => r.segment_type))
-        const filtered = allSegmentTypes.filter(type => volumeSegTypes.has(type))
-        return filtered.length > 0 ? filtered : allSegmentTypes
+        const filtered = filteredSegmentTypes.filter(type => volumeSegTypes.has(type))
+        return filtered.length > 0 ? filtered : filteredSegmentTypes
       })()
-    : allSegmentTypes
+    : filteredSegmentTypes
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-2.5 space-y-2">

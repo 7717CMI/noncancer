@@ -86,10 +86,11 @@ function findTopPerformer(records: DataRecord[], filters: FilterState, currency:
   if (!topKey) return null
   
   // Format value based on currency
+  // Data values are already in the display unit (USD Million for value, units for volume)
   let valueDisplay = ''
   if (filters.dataType === 'value') {
     if (currency === 'INR') {
-      // For INR, use Indian number system
+      // For INR, values are already in the stored unit
       if (topValue >= 10000000) {
         valueDisplay = `₹${(topValue / 10000000).toFixed(2)} Cr`
       } else if (topValue >= 100000) {
@@ -98,7 +99,8 @@ function findTopPerformer(records: DataRecord[], filters: FilterState, currency:
         valueDisplay = `₹${topValue.toFixed(2)}`
       }
     } else {
-      valueDisplay = `${(topValue / 1000000).toFixed(2)} USD Mn`
+      // Values are already in USD Million — don't divide again
+      valueDisplay = `${topValue.toFixed(2)} USD Mn`
     }
   } else {
     valueDisplay = `${topValue.toFixed(1)} ${volumeUnit}`

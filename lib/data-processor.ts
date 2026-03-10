@@ -144,41 +144,8 @@ export function filterData(
       geoMatch = true
     }
 
-    // In ALL view modes, if no records match the selected geographies for this segment type,
-    // we should include Global data as a fallback (handled later in aggregation)
-    // This is critical for segment-mode when data only exists under "Global" but user selects regional geographies
-    if (!geoMatch) {
-      // Check if any selected geography is a parent of this record's geography
-      // Regions contain countries - map them accordingly
-      const regionToCountries: Record<string, string[]> = {
-        'North America': ['U.S.', 'Canada'],
-        'Europe': ['U.K.', 'Germany', 'Italy', 'France', 'Spain', 'Russia', 'Rest of Europe'],
-        'Asia Pacific': ['China', 'India', 'Japan', 'South Korea', 'ASEAN', 'Australia', 'Rest of Asia Pacific'],
-        'Latin America': ['Brazil', 'Argentina', 'Mexico', 'Rest of Latin America'],
-        'Middle East': ['GCC', 'Israel', 'Rest of Middle East'],
-        'Africa': ['North Africa', 'Central Africa', 'South Africa']
-      }
-
-      // If a region is selected and this record is a country in that region, include it
-      for (const selectedGeo of filters.geographies) {
-        if (regionToCountries[selectedGeo]?.includes(record.geography)) {
-          geoMatch = true
-          break
-        }
-      }
-
-      // IMPORTANT: Include Global data when regional geographies are selected
-      // This is because segment types like "By Form" only exist under Global
-      // When user selects "North America" + "By Form", we need Global's By Form data
-      if (!geoMatch && record.geography === 'Global') {
-        // Check if any selected geography is a regional geography (not Global itself)
-        const regionalGeographies = ['North America', 'Europe', 'Asia Pacific', 'Latin America', 'Middle East', 'Africa', 'Middle East & Africa', 'ASEAN', 'SAARC Region', 'CIS Region']
-        const hasRegionalSelection = filters.geographies.some(g => regionalGeographies.includes(g))
-        if (hasRegionalSelection && !filters.geographies.includes('Global')) {
-          geoMatch = true
-        }
-      }
-    }
+    // Each geography (country/region) has its own segment data, so only match exact geography.
+    // No fallback to Global or parent regions needed — avoids double-counting.
 
     if (!geoMatch) {
       return false
@@ -657,8 +624,8 @@ export function prepareGroupedBarData(
   const shouldAggregateBySelectedSegment = selectedSegmentNames.length > 0 && viewMode === 'segment-mode'
 
   // Determine if we need stacked bars
-  const needsStacking = (viewMode === 'segment-mode' && geographies.length > 1) ||
-                        (viewMode === 'geography-mode' && segments.length > 1)
+  // Geography mode always shows totals (one bar per geography), never stacked by segment
+  const needsStacking = (viewMode === 'segment-mode' && geographies.length > 1)
   
   // Transform into Recharts format
   return years.map(year => {
@@ -961,6 +928,30 @@ export function prepareGroupedBarData(
             return // Skip this leaf record, use the aggregated one instead
           }
         } else if (viewMode === 'geography-mode') {
+          // For regional segment types (By Region), record geographies are region names
+          // but user selected "Global" - aggregate all into the selected geography
+          const isRegionalSegType = filters.segmentType === 'By Region' ||
+                                     filters.segmentType === 'By State' ||
+                                     filters.segmentType === 'By Country'
+          if (isRegionalSegType) {
+            // For By Region records, the record's geography IS the region name
+            // If user selected specific regions, group each under its own geography
+            // If user selected "Global", sum all regions into one total
+            if (geographies.includes('Global') || geographies.length === 0) {
+              key = 'Global'
+            } else if (geographies.includes(record.geography)) {
+              key = record.geography
+            } else {
+              // Record's geography doesn't match any selected - skip
+              return
+            }
+            if (!aggregatedData[key]) {
+              aggregatedData[key] = 0
+            }
+            aggregatedData[key] += record.time_series[year] || 0
+            return
+          }
+
           // In geography mode, aggregate child geographies under their parent
           // if the parent is selected (e.g., U.S. + Canada data shown as "North America")
           const regionToCountries: Record<string, string[]> = {
@@ -1180,6 +1171,26 @@ export function prepareLineChartData(
           key = record.segment
         }
       } else if (viewMode === 'geography-mode') {
+        // For regional segment types (By Region), record geographies are region names
+        // but user selected "Global" - aggregate all into the selected geography
+        const isRegionalSegType = filters.segmentType === 'By Region' ||
+                                   filters.segmentType === 'By State' ||
+                                   filters.segmentType === 'By Country'
+        if (isRegionalSegType) {
+          // For By Region records, group each under its own geography
+          // Only sum all into "Global" when Global is selected
+          if (filters.geographies.includes('Global') || filters.geographies.length === 0) {
+            key = 'Global'
+          } else if (filters.geographies.includes(record.geography)) {
+            key = record.geography
+          } else {
+            return // Skip - doesn't match selected geographies
+          }
+          const currentValue = aggregated.get(key) || 0
+          aggregated.set(key, currentValue + (record.time_series[year] || 0))
+          return
+        }
+
         // Lines represent geographies (aggregate across segments)
         // Map child geographies to their parent if parent is selected
         const regionToCountriesLine: Record<string, string[]> = {
@@ -1827,8 +1838,20 @@ export function prepareIntelligentMultiLevelData(
         key = record.segment
       }
     } else if (viewMode === 'geography-mode') {
-      // In geography mode, handle Global data mapping to selected regional geographies
-      if (needsGlobalMapping && record.geography === 'Global') {
+      // In geography mode for regional segment types (By Region), the record geographies
+      // are region names (North America, Europe, etc.) but user selected "Global".
+      // We need to aggregate ALL records into one total per selected geography.
+      if (isRegionalSegmentType) {
+        // For By Region records, group each under its own geography
+        // Only sum all into "Global" when Global is selected
+        if (geographies.includes('Global') || geographies.length === 0) {
+          key = 'Global'
+        } else if (geographies.includes(record.geography)) {
+          key = record.geography
+        } else {
+          return // Skip - doesn't match selected geographies
+        }
+      } else if (needsGlobalMapping && record.geography === 'Global') {
         // For Global records, we'll handle them separately in the year loop
         // For now, map to the first selected regional geography for grouping
         const selectedRegionals = geographies.filter(g => regionalGeographies.includes(g))
@@ -1955,6 +1978,13 @@ export function prepareIntelligentMultiLevelData(
         // SPECIAL CASE: For regional segment types with regions selected,
         // we need to SUM ALL records for this geography (e.g., sum all countries in North America)
         // because each record represents a country, and we want the total for the region
+        dataPoint[key] = groupRecords.reduce((sum, r) =>
+          sum + (r.time_series[year] || 0), 0
+        )
+      } else if (isRegionalSegmentType && viewMode === 'geography-mode') {
+        // SPECIAL CASE: For regional segment types in geography-mode (e.g., By Region + Global),
+        // all region records are grouped under "Global" key - we must SUM all of them
+        // to get the total market value, not pick a single leaf record
         dataPoint[key] = groupRecords.reduce((sum, r) =>
           sum + (r.time_series[year] || 0), 0
         )

@@ -43,24 +43,48 @@ export function ComparisonTable({ title, height = 600 }: ComparisonTableProps) {
       return 0
     }
 
+    // CAGR period: 2026-2033 (forecast period)
+    const cagrStartYear = 2026
+    const cagrEndYear = 2033
+    const cagrYears = cagrEndYear - cagrStartYear // 7 years
+
+    // Calculate total value across all filtered records for market share
+    const totalValueForYear = filtered.reduce((sum, record) => {
+      return sum + (record.time_series[year] || 0)
+    }, 0)
+
     // Transform to table format
-    return filtered.map(record => ({
-      geography: record.geography,
-      segment: record.segment,
-      segmentType: record.segment_type,
-      currentValue: record.time_series[year] || 0,
-      startValue: record.time_series[startYear] || 0,
-      endValue: record.time_series[endYear] || 0,
-      growth: record.time_series[startYear] > 0 
-        ? (((record.time_series[endYear] || 0) - (record.time_series[startYear] || 0)) / record.time_series[startYear] * 100)
-        : 0,
-      cagr: parseCAGR(record.cagr),
-      marketShare: record.market_share || 0,
-      sparkline: Object.entries(record.time_series)
-        .filter(([y]) => parseInt(y) >= startYear && parseInt(y) <= endYear)
-        .sort(([a], [b]) => parseInt(a) - parseInt(b))
-        .map(([, value]) => value)
-    }))
+    return filtered.map(record => {
+      const cagrStart = record.time_series[cagrStartYear] || 0
+      const cagrEnd = record.time_series[cagrEndYear] || 0
+      // CAGR = ((endValue / startValue) ^ (1/years) - 1) * 100
+      const calculatedCagr = cagrStart > 0 && cagrEnd > 0
+        ? (Math.pow(cagrEnd / cagrStart, 1 / cagrYears) - 1) * 100
+        : 0
+
+      const currentValue = record.time_series[year] || 0
+      const calculatedShare = totalValueForYear > 0
+        ? (currentValue / totalValueForYear) * 100
+        : 0
+
+      return {
+        geography: record.geography,
+        segment: record.segment,
+        segmentType: record.segment_type,
+        currentValue,
+        startValue: record.time_series[startYear] || 0,
+        endValue: record.time_series[endYear] || 0,
+        growth: record.time_series[startYear] > 0
+          ? (((record.time_series[endYear] || 0) - (record.time_series[startYear] || 0)) / record.time_series[startYear] * 100)
+          : 0,
+        cagr: calculatedCagr,
+        marketShare: calculatedShare,
+        sparkline: Object.entries(record.time_series)
+          .filter(([y]) => parseInt(y) >= startYear && parseInt(y) <= endYear)
+          .sort(([a], [b]) => parseInt(a) - parseInt(b))
+          .map(([, value]) => value)
+      }
+    })
   }, [data, filters])
 
   const sortedData = useMemo(() => {

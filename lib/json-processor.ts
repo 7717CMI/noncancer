@@ -646,9 +646,13 @@ async function processSegmentTypeAsync(
             }
           }
           
-          // Only add paths that have data (skip structure-only paths without numeric data)
+          // Only add paths that have data AND not already in allPaths (prevent double counting)
           if (data) {
-            allPaths.push({ path: structurePath.path, data })
+            const pathKey = structurePath.path.join('|')
+            const alreadyExists = allPaths.some(p => p.path.join('|') === pathKey)
+            if (!alreadyExists) {
+              allPaths.push({ path: structurePath.path, data })
+            }
           }
         }
       }
@@ -1214,7 +1218,9 @@ export async function processJsonDataAsync(
     }
     const startYear = Math.min(...allYears)
     const forecastYear = Math.max(...allYears)
-    const baseYear = Math.floor((startYear + forecastYear) / 2)
+    // Base year is the last historical year (2025) — the boundary between historical and forecast
+    // Historical: start_year to base_year (inclusive), Forecast: base_year+1 to forecast_year
+    const baseYear = 2025
     console.log(`Years: ${startYear} to ${forecastYear}, base: ${baseYear}`)
     
     // Extract geographies from segmentation data (first level keys)
@@ -1245,9 +1251,10 @@ export async function processJsonDataAsync(
       throw new Error('No geographies found in any data source. Please check your JSON structure.')
     }
 
-    // Extract regions from "By Region" segment type as additional geographies
-    // This allows filtering by region (Middle East, Latin America, etc.) in the geography dropdown
+    // Extract regions and countries from "By Region" segment type as additional geographies
+    // This allows filtering by region and country in the geography dropdown
     const regionGeographies: string[] = []
+    const countryGeographies: string[] = []
     for (const topGeo of geographies) {
       const geoData = structureData[topGeo]
       if (geoData && typeof geoData === 'object') {
@@ -1263,15 +1270,32 @@ export async function processJsonDataAsync(
             if (!regionGeographies.includes(region) && !geographies.includes(region)) {
               regionGeographies.push(region)
             }
+            // Extract countries under each region
+            const regionData = byRegionData[region]
+            if (regionData && typeof regionData === 'object') {
+              const countries = Object.keys(regionData).filter(key => {
+                const value = regionData[key]
+                return value && typeof value === 'object' && !Array.isArray(value)
+              })
+              countries.forEach(country => {
+                if (!countryGeographies.includes(country) && !geographies.includes(country) && !regionGeographies.includes(country)) {
+                  countryGeographies.push(country)
+                }
+              })
+            }
           })
         }
       }
     }
 
-    // Add regions to geographies list
+    // Add regions and countries to geographies list
     if (regionGeographies.length > 0) {
       console.log(`Found ${regionGeographies.length} regions from "By Region":`, regionGeographies)
       geographies = [...geographies, ...regionGeographies]
+    }
+    if (countryGeographies.length > 0) {
+      console.log(`Found ${countryGeographies.length} countries from "By Region":`, countryGeographies)
+      geographies = [...geographies, ...countryGeographies]
     }
 
     console.log(`Found ${geographies.length} total geographies:`, geographies)
